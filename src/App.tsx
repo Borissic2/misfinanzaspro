@@ -102,7 +102,7 @@ class LocalStorageMockDatabase {
           }
         })
       }),
-      upsert: async (record) => {
+      upsert: async (record, options) => {
         localStorage.setItem(storageKey, JSON.stringify(record));
         return { error: null };
       }
@@ -144,7 +144,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState('login'); 
   const [authForm, setAuthForm] = useState({ username: '', password: '', name: '' });
   const [authError, setAuthError] = useState('');
-  const [authSuccessMsg, setAuthSuccessMsg] = useState(''); // Mensaje de éxito al registrarse
+  const [authSuccessMsg, setAuthSuccessMsg] = useState(''); 
   const [isLoading, setIsLoading] = useState(false);
 
   // ---- ESTADOS DE LA APLICACIÓN ----
@@ -167,6 +167,7 @@ export default function App() {
   const [paymentInputs, setPaymentInputs] = useState({});
 
   const isUpdatingRef = useRef(false);
+  const isLoadedFromCloudRef = useRef(false); // Bandera crítica para evitar sobreescritura de datos vacíos
 
   // ---- 1. INICIALIZACIÓN DE SUPABASE Y ESCUCHA DE SESIÓN ----
   useEffect(() => {
@@ -200,7 +201,7 @@ export default function App() {
         console.error("Error obteniendo sesión inicial:", e);
       }
 
-      // Escuchar cambios de sesión sin retornar promesas en useEffect
+      // Escuchar cambios de sesión
       try {
         const { data } = clientInstance.auth.onAuthStateChange((_event, session) => {
           if (session) {
@@ -248,6 +249,7 @@ export default function App() {
     setIsLoggedIn(false);
     setCurrentUser(null);
     setIsDataLoaded(false);
+    isLoadedFromCloudRef.current = false;
     setDebts([]);
     setPaymentHistory([]);
     setTransactions([]);
@@ -256,7 +258,7 @@ export default function App() {
     setHistoryData([]);
   };
 
-  // ---- 2. CARGAR EL DOCUMENTO JSONB DESDE SUPABASE ----
+  // ---- 2. CARGAR EL DOCUMENTO JSONB DESDE SUPABASE (CARGA ANTES DE GUARDAR) ----
   const fetchGlobalUserData = async (userId, clientToUse) => {
     const activeClient = clientToUse || supabaseClient;
     if (!activeClient) return;
@@ -275,22 +277,35 @@ export default function App() {
 
       if (data && data.datos) {
         const payload = data.datos;
-        isUpdatingRef.current = true; 
+        isUpdatingRef.current = true; // Bloquea guardados temporales
         setDebts(payload.debts || []);
         setPaymentHistory(payload.paymentHistory || []);
         setTransactions(payload.transactions || []);
         setMonthlyBudget(payload.monthlyBudget ?? 6000);
         setBudgetCategories(payload.budgetCategories || []);
         setHistoryData(payload.historyData || []);
-        setTimeout(() => { isUpdatingRef.current = false; }, 100);
+        
+        isLoadedFromCloudRef.current = true; // Confirmamos que ya cargamos desde la nube
+        setIsDataLoaded(true);
+        setTimeout(() => { isUpdatingRef.current = false; }, 300);
       } else {
-        setDefaultFinancialData();
+        // El usuario está completamente vacío en la nube (Usuario Nuevo) -> Se permite el estado inicial en blanco
+        isUpdatingRef.current = true;
+        setDebts([]);
+        setPaymentHistory([]);
+        setTransactions([]);
+        setMonthlyBudget(6000);
+        setBudgetCategories([]);
+        setHistoryData([]);
+        
+        isLoadedFromCloudRef.current = true; // Confirmamos inicialización para habilitar sincronización
+        setIsDataLoaded(true);
+        setTimeout(() => { isUpdatingRef.current = false; }, 300);
       }
-      setIsDataLoaded(true);
     } catch (err) {
       console.error('Error al descargar datos del servidor:', err.message);
       setSyncStatus('error');
-      setDefaultFinancialData();
+      setDefaultFinancialData(); // Carga de respaldo local si falla la nube
       setIsDataLoaded(true);
     } finally {
       setIsDataLoading(false);
@@ -323,12 +338,14 @@ export default function App() {
     setPaymentHistory([
       { id: 'p1', debt_name: 'Préstamo de Moto', amount_paid: 500, payment_date: '2026-06-01' }
     ]);
-    setTimeout(() => { isUpdatingRef.current = false; }, 100);
+    isLoadedFromCloudRef.current = true;
+    setTimeout(() => { isUpdatingRef.current = false; }, 300);
   };
 
-  // ---- 3. GUARDADO AUTOMÁTICO DEL ESTADO JSONB ----
+  // ---- 3. GUARDADO AUTOMÁTICO EN LA NUBE CON UPSERT (EVITA SOBREESCRITURAS) ----
   useEffect(() => {
-    if (!isLoggedIn || !currentUser || !isDataLoaded || !supabaseClient || isUpdatingRef.current) return;
+    // Protección crucial: No guardar a menos que la sesión esté completamente activa, los datos cargados y la bandera Cloud confirmada
+    if (!isLoggedIn || !currentUser || !isDataLoaded || !isLoadedFromCloudRef.current || !supabaseClient || isUpdatingRef.current) return;
 
     const timer = setTimeout(async () => {
       if (isSupabaseConfigured) setSyncStatus('syncing');
@@ -349,7 +366,7 @@ export default function App() {
             user_id: currentUser.id,
             datos: payload,
             updated_at: new Date().toISOString()
-          });
+          }, { onConflict: 'user_id' }); // Sincronización segura basada en el conflicto de user_id
 
         if (error) throw error;
         if (isSupabaseConfigured) setSyncStatus('synced');
@@ -363,68 +380,94 @@ export default function App() {
   }, [debts, paymentHistory, transactions, monthlyBudget, budgetCategories, historyData, isLoggedIn, currentUser, isDataLoaded]);
 
 
-  // ---- MANEJADORES DE AUTENTICACIÓN ----
-  const handleAuthSubmit = async (e) => {
+  // ---- MANEJADORES DE AUTENTICACIÓN (FORMULARIOS SEPARADOS COMPLETAMENTE) ----
+
+  // 1. Manejador de Inicio de Sesión
+  const handleLoginSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
+    setAuthSuccessMsg('');
     if (!supabaseClient) return;
 
     const emailFake = `${authForm.username.trim().toLowerCase()}@finanzas.com`; 
     const password = authForm.password;
 
     if (!authForm.username || !password) {
-      setAuthError('Por favor, llena todos los campos obligatorios.');
+      setAuthError('Por favor, ingresa tu usuario y contraseña.');
       return;
     }
 
     setIsLoading(true);
 
     try {
-      if (authMode === 'signup') {
-        if (!authForm.name.trim()) {
-          throw new Error('Por favor, ingresa tu nombre completo.');
-        }
-        if (password.length < 6) {
-          throw new Error('La contraseña debe tener al menos 6 caracteres.');
-        }
-
-        const { data, error } = await supabaseClient.auth.signUp({
-          email: emailFake,
-          password: password,
-          options: {
-            data: {
-              name: authForm.name.trim(),
-              username: authForm.username.trim().toLowerCase()
-            }
-          }
-        });
-        if (error) throw error;
-
-        // Crear registro JSONB vacío inicial para el nuevo usuario
-        if (data && data.user) {
-          await supabaseClient.from('datos_usuario').upsert({
-            user_id: data.user.id,
-            datos: {
-              debts: [],
-              paymentHistory: [],
-              transactions: [],
-              monthlyBudget: 6000,
-              budgetCategories: [],
-              historyData: []
-            }
-          });
-        }
-      } else {
-        const { error } = await supabaseClient.auth.signInWithPassword({
-          email: emailFake,
-          password: password,
-        });
-        if (error) throw error;
-      }
-      setAuthSuccessMsg(authMode === 'signup' ? '¡Registro exitoso! Revisa tu correo o inicia sesión.' : '');
+      const { error } = await supabaseClient.auth.signInWithPassword({
+        email: emailFake,
+        password: password,
+      });
+      if (error) throw error;
       setAuthForm({ username: '', password: '', name: '' });
     } catch (error) {
-      setAuthError(error.message || 'Ocurrió un error inesperado.');
+      setAuthError(error.message || 'Usuario o contraseña incorrectos.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 2. Manejador de Registro Único
+  const handleSignupSubmit = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthSuccessMsg('');
+    if (!supabaseClient) return;
+
+    const emailFake = `${authForm.username.trim().toLowerCase()}@finanzas.com`; 
+    const password = authForm.password;
+
+    if (!authForm.username || !password || !authForm.name.trim()) {
+      setAuthError('Por favor, llena todos los campos de registro.');
+      return;
+    }
+
+    if (password.length < 6) {
+      setAuthError('La contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const { data, error } = await supabaseClient.auth.signUp({
+        email: emailFake,
+        password: password,
+        options: {
+          data: {
+            name: authForm.name.trim(),
+            username: authForm.username.trim().toLowerCase()
+          }
+        }
+      });
+      if (error) throw error;
+
+      // Inicializa el documento JSONB en la nube solo si se creó correctamente el usuario
+      if (data && data.user) {
+        await supabaseClient.from('datos_usuario').upsert({
+          user_id: data.user.id,
+          datos: {
+            debts: [],
+            paymentHistory: [],
+            transactions: [],
+            monthlyBudget: 6000,
+            budgetCategories: [],
+            historyData: []
+          }
+        }, { onConflict: 'user_id' });
+      }
+
+      setAuthSuccessMsg('¡Registro exitoso! Revisa tu correo o inicia sesión ahora.');
+      setAuthForm({ username: '', password: '', name: '' });
+      setAuthMode('login'); // Redirección automática amigable
+    } catch (error) {
+      setAuthError(error.message || 'Error al intentar registrar el usuario.');
     } finally {
       setIsLoading(false);
     }
@@ -605,7 +648,7 @@ export default function App() {
             <Wallet className="w-12 h-12 text-emerald-400" />
           </div>
           <h1 className="text-3xl font-extrabold text-white tracking-tight">Mis Finanzas Pro</h1>
-          <p className="text-emerald-300 text-sm mt-1">Sincronización global optimizada en JSON con Supabase</p>
+          <p className="text-emerald-300 text-sm mt-1">Sincronización global segura en JSON con Supabase</p>
         </div>
 
         <div className="bg-white w-full max-w-md p-8 rounded-2xl shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300">
@@ -647,7 +690,8 @@ export default function App() {
             </div>
           )}
 
-          <form onSubmit={handleAuthSubmit} className="space-y-4">
+          {/* FORMULARIOS SEPARADOS COMPLETAMENTE */}
+          <form onSubmit={authMode === 'login' ? handleLoginSubmit : handleSignupSubmit} className="space-y-4">
             {authMode === 'signup' && (
               <div>
                 <label className="block text-xs font-semibold text-gray-500 mb-1">Nombre Completo</label>
@@ -696,7 +740,7 @@ export default function App() {
                   value={authForm.password} 
                   onChange={e => setAuthForm({...authForm, password: e.target.value})} 
                   className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" 
-                  placeholder="••••••" 
+                  placeholder="•••••" 
                 />
               </div>
             </div>
@@ -762,7 +806,7 @@ export default function App() {
                 )}
                 {syncStatus === 'offline' && (
                   <span className="flex items-center gap-1 bg-orange-800 text-orange-200 px-2 py-0.5 rounded-full font-bold">
-                    <CloudOff className="w-3.5 h-3.5" /> Online
+                    <CloudOff className="w-3.5 h-3.5" /> Servidor Local (Demo)
                   </span>
                 )}
                 {syncStatus === 'error' && (

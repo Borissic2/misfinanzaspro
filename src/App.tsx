@@ -272,7 +272,7 @@ export default function App() {
       return;
     }
 
-    const emailReal = `${authForm.username.trim().toLowerCase()}@finanzas.com`; 
+    const emailReal = authForm.username.trim().toLowerCase(); 
     const password = authForm.password;
 
     if (!authForm.username || !password) {
@@ -308,7 +308,7 @@ export default function App() {
       return;
     }
 
-    const emailReal = `${authForm.username.trim().toLowerCase()}@finanzas.com`; 
+    const emailReal = authForm.username.trim().toLowerCase();
     const password = authForm.password;
 
     if (!authForm.username || !password || !authForm.name.trim()) {

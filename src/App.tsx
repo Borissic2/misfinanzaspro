@@ -1,3 +1,4 @@
+import { createClient } from '@supabase/supabase-js';
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Wallet, 
@@ -24,17 +25,9 @@ import {
   CloudOff
 } from 'lucide-react';
 
-// ---- DETECCIÓN DE CONFIGURACIÓN DE SUPABASE ----
 // ---- INYECCIÓN DIRECTA DE CONFIGURACIÓN DE SUPABASE ----
 const supabaseUrl = 'https://supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN5cmZqa2RwenFxd2Flem55dHdrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1MjY3MTksImV4cCI6MjA5ODEwMjcxOX0.BdCqyYdeXyi1JWhACRJvyiTqsWJnDcA3OIcIa32ucc0';
-
-try {
-  supabaseUrl = (import.meta && import.meta.env && import.meta.env.VITE_SUPABASE_URL) || '';
-  supabaseAnonKey = (import.meta && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) || '';
-} catch (e) {
-  console.warn("No se pudieron leer las variables de entorno de import.meta.env");
-}
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInZiOiJjeXJmamtkcHpxcXdhZXpueXR3ayIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzgyNTI2NzE5LCJleHAiOjIwOTgxMDI3MTl9.BdCqyYdeXyi1JWhACRJvyiTqsWJnDcA3OIcIa32ucc0';
 
 const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
 
@@ -108,7 +101,7 @@ export default function App() {
       
       if (loaded && window.supabase && isSupabaseConfigured) {
         try {
-          const clientInstance = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+          const clientInstance = createClient(supabaseUrl, supabaseAnonKey);
           setSupabaseClient(clientInstance);
           setSyncStatus('synced');
           setIsClientLoaded(true);

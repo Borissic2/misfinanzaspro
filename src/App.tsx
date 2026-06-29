@@ -244,7 +244,6 @@ export default function App() {
           .upsert({
             user_id: currentUser.id,
             datos: payload,
-            updated_at: new Date().toISOString()
           }, { onConflict: 'user_id' });
 
         if (error) throw error;

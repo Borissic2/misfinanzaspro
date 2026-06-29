@@ -26,8 +26,8 @@ import {
 } from 'lucide-react';
 
 // ---- INYECCIÓN DIRECTA DE CONFIGURACIÓN DE SUPABASE ----
-const supabaseUrl = 'https://supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInZiOiJjeXJmamtkcHpxcXdhZXpueXR3ayIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzgyNTI2NzE5LCJleHAiOjIwOTgxMDI3MTl9.BdCqyYdeXyi1JWhACRJvyiTqsWJnDcA3OIcIa32ucc0';
+const supabaseUrl = 'https://cyrfjkdpzqqwaeznytwk.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN5cmZqa2RwenFxd2Flem55dHdrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1MjY3MTksImV4cCI6MjA5ODEwMjcxOX0.BdCqyYdeXyi1JWhACRJvyiTqsWJnDcA3OIcIa32ucc0';
 
 const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
 
